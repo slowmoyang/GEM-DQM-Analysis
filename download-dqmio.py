@@ -244,11 +244,10 @@ def main():
     # common
     parser.add_argument('-o', '--output-dir', type=Path, help='output directory')
 
-    ###########################################################################
-    # Run
-    ###########################################################################
+    # parse
     args = parser.parse_args()
 
+    # Run
     download_dqm_files(run_expr_list=args.run,
                        dataset_list=args.dataset,
                        output_dir=args.output_dir,
