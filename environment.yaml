@@ -6,5 +6,10 @@ dependencies:
     - pip
     - beautifulsoup4 
     - tqdm
+    - root
+    - uproot
+    - hist
+    - mplhep 
+    - numpy
     - pip:
         - git+ssh://git@gitlab.cern.ch:7999/cmsoms/oms-api-client.git
