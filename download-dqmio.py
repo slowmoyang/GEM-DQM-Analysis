@@ -3,13 +3,14 @@
 
 TODO
 - [ ] certificiate with password
+- [ ] lint
 """
 from __future__ import annotations
 import os
 import argparse
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Protocol, Optional
 import re
 import urllib.parse
 import urllib.request
@@ -83,7 +84,7 @@ class DQMDatasetInfo:
         acquisition_era, stream, proc_version = processed.split('-')
         instance = cls(primary, acquisition_era, stream, proc_version, tier)
         if dataset != str(instance):
-            raise RuntimeError(f"failed to parse dataset: {dataset} ==> {str(instance)}")
+            raise RuntimeError(f"failed to parse dataset: {dataset} ==> {str(instance)}") # TODO URLNotFoundError
         return instance
 
     @property
@@ -94,7 +95,11 @@ class DQMDatasetInfo:
         return f'/{self.primary}/{self.processed}/{self.tier}'
 
 
-def get_offline_dqm_file_link(dataset: str, run: int) -> str:
+class LinkFinderCallable(Protocol):
+    def __call__(self, run: int, dataset: str) -> str:
+        ...
+
+def find_offline_dqm_file_link(dataset: str, run: int) -> str:
     info = DQMDatasetInfo.from_das_name(dataset)
     run_str = f'{run:0>9d}'
 
@@ -120,7 +125,7 @@ def get_offline_dqm_file_link(dataset: str, run: int) -> str:
         raise RuntimeError(f"failed to find a filename matched with '{filename_pattern}' from '{url}'") # TODO raise proper error
 
 
-def get_online_dqm_file_link(run: int, client: str) -> str:
+def find_online_dqm_file_link(run: int, client: str) -> str:
     r'''
     https://cmsweb.cern.ch/dqm/offline/data/browse/ROOT/OnlineData/original/00035xxxx/0003553xx/DQM_V0001_GEM_R000355361.root
     '''
@@ -174,79 +179,80 @@ def download_root_file(url: str,
         root_file.write(data)
     return output_path
 
+def interpret_run_expr(expr: str) -> list[int]:
+    run_list: list[int] = []
+    if re.match(r'\d+-\d', expr):
+        start_run, end_run = expr.split('-') # inclusive
+        run_list += list(range(int(start_run), int(end_run) + 1))
+    elif re.match(r'\d+', expr):
+        run_list += [int(expr)]
+    else:
+        raise RuntimeError('failed to interpret {expr}')
+    return run_list
 
-def download_offline_dqm_files(run_list, dataset_list, output_dir):
+def download_dqm_files(run_expr_list: list[str],
+                       dataset_list: list[str],
+                       output_dir: Path,
+                       link_finder: LinkFinderCallable
+) -> None:
+    """docstring for download_offline_dqm_files
+    """
+    # remove duplicates runs and sort
+    run_list = sorted(set(run for expr in run_expr_list for run in interpret_run_expr(expr)))
     args_list = list(itertools.product(run_list, dataset_list))
 
     failures = []
     for run, dataset in (pbar := tqdm.tqdm(args_list)):
-        pbar.set_description(f'{run=}, {dataset=}')
+        pbar.set_description(f'Run {run}, {dataset}')
         try:
-            url = get_offline_dqm_file_link(run=run, dataset=dataset)
+            url = link_finder(run=run, dataset=dataset)
             download_root_file(url=url, output_dir=output_dir)
         except Exception as error:
             failures.append((run, dataset, error))
 
-
-    for run, dataset, error in failures:
-        print(f'{run=}, {dataset=}: {error=}')
-
-def download_online_dqm_files(run_list: list[int], client_list: list[str]):
-    args_list = list(itertools.product(run_list, client_list))
-    for run, client in (pbar := tqdm.tqdm(args_list)):
-        pbar.set_description(f'{run=}')
-        try:
-            url = get_online_dqm_file_link(run=run, client=client)
-        except Exception as error:
-            print(error)
-            continue
-
-        try:
-            download_root_file(url=url)
-        except Exception as error:
-            print(error)
-
+    if len(failures) > 0:
+        print(f'{len(failures)} failures:')
+        for run, dataset, error in failures:
+            print(f'- Run {run}, {dataset}: {error=}')
 
 def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     subparsers = parser.add_subparsers(required=True)
 
-    ###########################################################################
     # Offline DQM
-    ###########################################################################
     offline_parser = subparsers.add_parser('offline', aliases=['off'],
                                            help='download offline dqm files')
-    offline_parser.add_argument("-r", "--run", dest='run_list', type=int,
+    offline_parser.add_argument("-r", "--run", type=str,
                                 nargs="+", required=True, help="runs")
-    offline_parser.add_argument("-d", "--dataset", dest='dataset_list',
+    offline_parser.add_argument("-d", "--dataset",
                                 type=str, nargs="+", required=True,
-                                help="datasets, DAS format")
-    offline_parser.set_defaults(download_func=download_offline_dqm_files)
+                                help="datasets, DAS convention")
+    offline_parser.set_defaults(link_finder=find_offline_dqm_file_link)
 
-    ###########################################################################
     # Online DQM
-    ###########################################################################
     online_parser = subparsers.add_parser('online', aliases=['on'],
                                           help='download online dqm files')
-    online_parser.add_argument("-r", "--run", dest='run_list',
-                               type=int, nargs="+", required=True,
+    online_parser.add_argument("-r", "--run", type=str, nargs="+", required=True,
                                help="runs")
-    online_parser.add_argument('-c', '--client', dest='client_list',
+    online_parser.add_argument('-c', '--client', dest='dataset',
                                type=str, nargs='+',
                                default=['GEM'],
-                               help='online dqm clients')
-    online_parser.set_defaults(download_func=download_online_dqm_files)
+                               help='online dqm clients (https://github.com/cms-sw/cmssw/tree/master/DQM/Integration/python/clients)')
+    online_parser.set_defaults(link_finder=find_online_dqm_file_link)
 
-    parser.add_argument('-o', '--output-dir', type=Path, default='output directory')
+    # common
+    parser.add_argument('-o', '--output-dir', type=Path, help='output directory')
 
     ###########################################################################
     # Run
     ###########################################################################
     args = parser.parse_args()
-    args = vars(args)
-    download_func = args.pop('download_func')
-    download_func(**args)
+
+    download_dqm_files(run_expr_list=args.run,
+                       dataset_list=args.dataset,
+                       output_dir=args.output_dir,
+                       link_finder=args.link_finder)
 
 if __name__ == '__main__':
     main()
