@@ -1,0 +1,10 @@
+name: test-gem-dqm-analysis-py39
+channels:
+    - conda-forge
+dependencies:
+    - python=3.9
+    - pip
+    - beautifulsoup4 
+    - tqdm
+    - pip:
+        - git+ssh://git@gitlab.cern.ch:7999/cmsoms/oms-api-client.git
