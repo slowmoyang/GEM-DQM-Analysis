@@ -6,6 +6,17 @@ from pathlib import Path
 import argparse
 import pandas as pd
 
+DEFAULT_CSV_COLUMNS = [
+    'run_number',
+    'start_time',
+    'end_time',
+    'GEM',
+    'CSC',
+    'DQM',
+    'cmssw_version',
+    'tier0_transfer',
+]
+
 def transform_row(row, component_set: set[str]):
     for each in row.pop('components'):
         row[each] = 1
@@ -25,7 +36,7 @@ def run(input_path: Path,
         output_path: Path,
         table: str,
         if_exists: str,
-        to_csv: bool,
+        cols_to_csv: list[str],
         dump_schema: bool,
 ) -> None:
     with open(input_path, 'r') as json_file:
@@ -48,8 +59,8 @@ def run(input_path: Path,
     connection.commit()
     connection.close()
 
-    if to_csv:
-        data.to_csv(output_path.with_suffix('.csv'))
+    if len(cols_to_csv) > 0:
+        data[cols_to_csv].to_csv(output_path.with_suffix('.csv'))
 
 def main():
     """TODO: Docstring for main.
@@ -66,16 +77,16 @@ def main():
     parser.add_argument("--if-exists", type=str, default='fail',
                         choices=('fail', 'replace', 'append'),
                         help="How to behave if the table already exists.")
-    parser.add_argument("--to-csv", action="store_true", default=False, help="to csv")
+    parser.add_argument("--cols-to-csv", type=str, nargs='?',
+                        default=DEFAULT_CSV_COLUMNS,
+                        help="convert selected columns into csv")
     parser.add_argument("-s", "--dump-schema", action="store_true", default=False, help="dump schema")
     args = parser.parse_args()
 
-    run(input_path=args.input_path,
-        output_path=args.output_path,
-        table=args.table,
-        if_exists=args.if_exists,
-        to_csv=args.to_csv,
-        dump_schema=args.dump_schema)
+    run(**vars(args))
 
 if __name__ == "__main__":
     main()
+
+
+
