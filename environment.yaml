@@ -11,5 +11,7 @@ dependencies:
     - hist
     - mplhep 
     - numpy
+    - cx_oracle
+    - pandas
     - pip:
         - git+ssh://git@gitlab.cern.ch:7999/cmsoms/oms-api-client.git
