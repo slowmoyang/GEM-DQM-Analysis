@@ -5,11 +5,12 @@ dependencies:
     - python=3.9
     - pip
     - beautifulsoup4 
-    - tqdm
     - root
+    - cx_oracle
     - uproot
     - hist
     - mplhep 
     - numpy
+    - tqdm
     - pip:
         - git+ssh://git@gitlab.cern.ch:7999/cmsoms/oms-api-client.git
