@@ -11,6 +11,8 @@ from array import array
 import argparse
 from argparse import RawTextHelpFormatter
 from sys import exit
+import getpass
+
 
 """
 ``GEMDCSP5Monitor.py`` --- Retrieve data for GEM detectors in P5 from database
@@ -121,16 +123,9 @@ if args.verbose:
 else:
     verboseprint = lambda *a: None      # do-nothing function
 
-#import DB credentials as env variables
-for env in ["GEM_P5_DB_NAME_OFFLINE_MONITOR", "GEM_P5_DB_ACCOUNT_OFFLINE_MONITOR"]:
-    try:
-       os.environ[env]
-    except KeyError:
-       print("Please set the environment variable ", env, " setting it in your setup_DCS.sh file")
-       exit(1)
+dbName = os.getenv("GEM_P5_DB_NAME_OFFLINE_MONITOR") or getpass.getpass(prompt='GEM P5 DB Name: ')
+dbAccount = os.getenv("GEM_P5_DB_ACCOUNT_OFFLINE_MONITOR") or getpass.getpass(prompt='GEM P5 DB Account')
 
-dbName = os.getenv("GEM_P5_DB_NAME_OFFLINE_MONITOR")
-dbAccount = os.getenv("GEM_P5_DB_ACCOUNT_OFFLINE_MONITOR")
 
 def main():
    #Reminder: in the DB the DeltaV between pins are saved, not the V from ground
