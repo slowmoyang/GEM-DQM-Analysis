@@ -18,3 +18,24 @@ OMS API Client ID:
 OMS API Client Secret (timeout after 10 sec):
 https://cmsoms.cern.ch/agg/api/v1/runs/?filter[run_number][GE]=352322&page[offset]=0&page[limit]=100000
 ```
+
+## how to convert to a JSON format result file of `fetch-runs.py` into .sql (and .csv)
+```console
+$ python convert-oms-json-to-sql.py -h
+usage: convert-oms-json-to-sql.py [-h] [--output-path OUTPUT_PATH] [-t TABLE] [--if-exists {fail,replace,append}] [--to-csv] [-s] input_path
+
+positional arguments:
+  input_path            Help text
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --output-path OUTPUT_PATH, --output-path OUTPUT_PATH
+                        a path to output file (default: None)
+  -t TABLE, --table TABLE
+                        table name (default: oms)
+  --if-exists {fail,replace,append}
+                        How to behave if the table already exists. (default: fail)
+  --to-csv              to csv (default: False)
+  -s, --dump-schema     dump schema (default: False)
+$ convert-oms-json-to-sql.py path/to/fetch-runs/result.json
+```
