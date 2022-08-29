@@ -1,4 +1,4 @@
-name: test-gem-dqm-analysis-py39
+name: gem-dqm-analysis-py39
 channels:
     - conda-forge
 dependencies:
