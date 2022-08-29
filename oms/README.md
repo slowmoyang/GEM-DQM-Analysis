@@ -40,5 +40,5 @@ optional arguments:
                         convert selected columns into csv (default: ['run_number', 'start_time', 'end_time', 'GEM', 'CSC', 'DQM', 'cmssw_version',
                         'tier0_transfer'])
   -s, --dump-schema     dump schema (default: False)
-$ convert-oms-json-to-sql.py path/to/fetch-runs/result.json
+$ python convert-oms-json-to-sql.py path/to/fetch-runs/result.json
 ```
