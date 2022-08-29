@@ -21,8 +21,9 @@ https://cmsoms.cern.ch/agg/api/v1/runs/?filter[run_number][GE]=352322&page[offse
 
 ## how to convert to a JSON format result file of `fetch-runs.py` into .sql (and .csv)
 ```console
-$ python convert-oms-json-to-sql.py -h
-usage: convert-oms-json-to-sql.py [-h] [--output-path OUTPUT_PATH] [-t TABLE] [--if-exists {fail,replace,append}] [--to-csv] [-s] input_path
+$ python convert-oms-json-to-sql.py -h                                                                                                                 1 ↵
+usage: convert-oms-json-to-sql.py [-h] [--output-path OUTPUT_PATH] [-t TABLE] [--if-exists {fail,replace,append}] [--cols-to-csv [COLS_TO_CSV]] [-s]
+                                  input_path
 
 positional arguments:
   input_path            Help text
@@ -35,7 +36,9 @@ optional arguments:
                         table name (default: oms)
   --if-exists {fail,replace,append}
                         How to behave if the table already exists. (default: fail)
-  --to-csv              to csv (default: False)
+  --cols-to-csv [COLS_TO_CSV]
+                        convert selected columns into csv (default: ['run_number', 'start_time', 'end_time', 'GEM', 'CSC', 'DQM', 'cmssw_version',
+                        'tier0_transfer'])
   -s, --dump-schema     dump schema (default: False)
 $ convert-oms-json-to-sql.py path/to/fetch-runs/result.json
 ```
