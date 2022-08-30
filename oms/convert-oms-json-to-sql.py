@@ -73,7 +73,7 @@ def main():
     parser.add_argument("input_path", type=Path, help="Help text")
     parser.add_argument("--output-path", "--output-path", default=None,
                         help="a path to output file")
-    parser.add_argument("-t", "--table", default="oms", type=str, help="table name")
+    parser.add_argument("-t", "--table", default="runs", type=str, help="table name")
     parser.add_argument("--if-exists", type=str, default='fail',
                         choices=('fail', 'replace', 'append'),
                         help="How to behave if the table already exists.")
