@@ -5,6 +5,7 @@ TODO
 - [ ] certificiate with password
 - [ ] lint
 - [ ] multiprocessing
+- [ ] is it vulnerable to send client secret through env var?
 """
 from __future__ import annotations
 import os
@@ -19,26 +20,52 @@ import http.client
 from http import HTTPStatus
 import ssl
 import itertools
+from functools import cache
+import getpass
+import signal
 from bs4 import BeautifulSoup
 import tqdm
 from omsapi import OMSAPI
-import json
-from functools import cache
 
 
 CMSWEB_NETLOC = 'https://cmsweb.cern.ch/'
+PASSWORD_PROMPT_TIMEOUT = 10 # sec
+GEM_DQM_CERN_CERTIFICATE = "GEM_DQM_CERN_CERTIFICATE"
 
 ###############################################################################
 # OMS 
 ###############################################################################
+def timeout_handler(signum, frame):
+    raise TimeoutError('Timeout!')
+
+@dataclass
+class ClientAuth:
+    id: str
+    secret: str
+
+def get_client_auth_from_prompt():
+    client_id = getpass.getpass(prompt='OMS API Client ID: ')
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(PASSWORD_PROMPT_TIMEOUT)
+    client_secret = getpass.getpass(
+            prompt=f'OMS API Client Secret (timeout after {PASSWORD_PROMPT_TIMEOUT} sec): ')
+    signal.alarm(0)
+    return ClientAuth(client_id, client_secret)
+
+# TODO check if it is vulnerable to pass a secret through env var
+def get_client_auth_from_env() -> Optional[ClientAuth]:
+    client_id = os.getenv('GEM_DQM_OMS_API_CLIENT_ID')
+    client_secret = os.getenv('GEM_DQM_OMS_API_CLIENT_SECRET')
+    if client_id is not None and client_secret is not None:
+        return ClientAuth(client_id, client_secret)
+
 @cache
 def load_oms_api():
     api_url = "https://cmsoms.cern.ch/agg/api"
     api_version = "v1"
     omsapi = OMSAPI(api_url, api_version, cert_verify=False)
-    with open('./test/oms-test/oms-api-client-auth.json', 'r') as json_file:
-        auth = json.load(json_file)
-    omsapi.auth_oidc(client_id=auth['id'], client_secret=auth['secret'])
+    auth = get_client_auth_from_env() or get_client_auth_from_prompt()
+    omsapi.auth_oidc(client_id=auth.id, client_secret=auth.secret)
     return omsapi
 
 _ERA_TO_RUN_RANGE_LIST: list[tuple[str, int, int]] = []
@@ -83,22 +110,25 @@ class CertChain:
     certfile: str
     keyfile: str
 
-
+@cache
 def load_cert_chain() -> CertChain:
-    if (cert_dir := os.getenv('CERN_CERTIFICATE_PATH')) is not None:
+    if (cert_dir := os.getenv(GEM_DQM_CERN_CERTIFICATE)) is not None:
         cert_dir = Path(cert_dir)
     else:
         cert_dir = Path.home() / '.globus'
-        print(f"The environment variable 'CERN_CERTIFICATE_PATH' is not set. It fallbacks to '{str(cert_dir)}'")
+        print(f"The environment variable '{GEM_DQM_CERN_CERTIFICATE}' is not set. It fallbacks to '{str(cert_dir)}'")
+
     if not cert_dir.exists():
         raise FileNotFoundError(cert_dir)
 
     certfile = cert_dir / 'usercert.pem'
     if not certfile.exists():
         raise FileNotFoundError(certfile)
+
     keyfile = cert_dir / 'userkey.pem'
     if not keyfile.exists():
         raise FileNotFoundError(keyfile)
+
     return CertChain(str(certfile), str(keyfile))
 
 
@@ -133,13 +163,9 @@ class LinkFinderCallable(Protocol):
     def __call__(self, run: int, dataset: str) -> str:
         ...
 
-
 def _find_file_url(url: str, pattern: re.Pattern) -> str:
-    try:
-        response = urllib.request.build_opener(HTTPSAuthHandler()).open(url)
-    except Exception as error:
-        print(f'got exception: {url=:s}')
-        raise error
+    response = urllib.request.build_opener(HTTPSAuthHandler()).open(url)
+
     if response.status != HTTPStatus.OK:
         raise RuntimeError(f'[{response.status=}] {url=:s}')
 
@@ -151,7 +177,6 @@ def _find_file_url(url: str, pattern: re.Pattern) -> str:
             return urllib.parse.urljoin(CMSWEB_NETLOC, href)
     else:
         raise RuntimeError(f"failed to find a filename matched with '{pattern}' from '{url}'") # TODO raise proper error
-
 
 
 def find_offline_dqm_file_link(dataset: str, run: int) -> str:
@@ -183,6 +208,7 @@ def find_online_dqm_file_link(run: int, dataset: str) -> str:
     pattern = re.compile(rf'DQM_V\d{{4}}_{dataset:s}_R{run:0>9}.root')
     return _find_file_url(url=url, pattern=pattern)
 
+
 def download_root_file(url: str,
                        filename: Optional[str] = None,
                        output_dir: Optional[Path] = None,
@@ -196,11 +222,7 @@ def download_root_file(url: str,
     output_path = output_dir / filename
     assert output_path.suffix == '.root', output_path
 
-    try:
-        response = urllib.request.build_opener(HTTPSAuthHandler()).open(url)
-    except Exception as error:
-        print(f'got exception: {url=:s}')
-        raise error
+    response = urllib.request.build_opener(HTTPSAuthHandler()).open(url)
     if response.status != HTTPStatus.OK:
         raise RuntimeError(f'[{response.status=}] {url=:s}')
 
@@ -208,6 +230,7 @@ def download_root_file(url: str,
     with open(output_path, 'wb') as root_file:
         root_file.write(data)
     return output_path
+
 
 def interpret_run_expr(expr: str) -> list[int]:
     run_list: list[int] = []
@@ -219,6 +242,7 @@ def interpret_run_expr(expr: str) -> list[int]:
     else:
         raise RuntimeError('failed to interpret {expr}')
     return run_list
+
 
 def download_dqm_files(run_expr_list: list[str],
                        dataset_list: list[str],
@@ -234,6 +258,7 @@ def download_dqm_files(run_expr_list: list[str],
     failures = []
     for run, dataset in (pbar := tqdm.tqdm(args_list)):
         pbar.set_description(f'Run {run}, {dataset}')
+
         try:
             url = link_finder(run=run, dataset=dataset)
             download_root_file(url=url, output_dir=output_dir)
@@ -243,7 +268,7 @@ def download_dqm_files(run_expr_list: list[str],
     if len(failures) > 0:
         print(f'{len(failures)} failures:')
         for run, dataset, error in failures:
-            print(f'- Run {run}, {dataset}: {error=}')
+            print(f'- {run=}, {dataset=}, {error=}')
 
 def main():
     parser = argparse.ArgumentParser(
