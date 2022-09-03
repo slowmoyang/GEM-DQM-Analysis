@@ -8,65 +8,22 @@ TODO
 - [ ] is it vulnerable to send client secret through env var?
 """
 from __future__ import annotations
-import os
 import argparse
 from pathlib import Path
-from dataclasses import dataclass
 from typing import Protocol, Optional
 import re
 import urllib.parse
-import urllib.request
-import http.client
-from http import HTTPStatus
-import ssl
 import itertools
-from functools import cache
-import getpass
-import signal
 from bs4 import BeautifulSoup
 import tqdm
-from omsapi import OMSAPI
+from gemdqm.auth import open_url
+from gemdqm.oms import load_oms_api
 
 
 CMSWEB_NETLOC = 'https://cmsweb.cern.ch/'
 PASSWORD_PROMPT_TIMEOUT = 10 # sec
 GEM_DQM_CERN_CERTIFICATE = "GEM_DQM_CERN_CERTIFICATE"
 
-###############################################################################
-# OMS 
-###############################################################################
-def timeout_handler(signum, frame):
-    raise TimeoutError('Timeout!')
-
-@dataclass
-class ClientAuth:
-    id: str
-    secret: str
-
-def get_client_auth_from_prompt():
-    client_id = getpass.getpass(prompt='OMS API Client ID: ')
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(PASSWORD_PROMPT_TIMEOUT)
-    client_secret = getpass.getpass(
-            prompt=f'OMS API Client Secret (timeout after {PASSWORD_PROMPT_TIMEOUT} sec): ')
-    signal.alarm(0)
-    return ClientAuth(client_id, client_secret)
-
-# TODO check if it is vulnerable to pass a secret through env var
-def get_client_auth_from_env() -> Optional[ClientAuth]:
-    client_id = os.getenv('GEM_DQM_OMS_API_CLIENT_ID')
-    client_secret = os.getenv('GEM_DQM_OMS_API_CLIENT_SECRET')
-    if client_id is not None and client_secret is not None:
-        return ClientAuth(client_id, client_secret)
-
-@cache
-def load_oms_api():
-    api_url = "https://cmsoms.cern.ch/agg/api"
-    api_version = "v1"
-    omsapi = OMSAPI(api_url, api_version, cert_verify=False)
-    auth = get_client_auth_from_env() or get_client_auth_from_prompt()
-    omsapi.auth_oidc(client_id=auth.id, client_secret=auth.secret)
-    return omsapi
 
 _ERA_TO_RUN_RANGE_LIST: list[tuple[str, int, int]] = []
 
@@ -103,59 +60,6 @@ def query_era(run: int) -> str:
         return _query_era(run)
 
 ###############################################################################
-# CERN CERTIFICATION
-###############################################################################
-@dataclass
-class CertChain:
-    certfile: str
-    keyfile: str
-
-@cache
-def load_cert_chain() -> CertChain:
-    if (cert_dir := os.getenv(GEM_DQM_CERN_CERTIFICATE)) is not None:
-        cert_dir = Path(cert_dir)
-    else:
-        cert_dir = Path.home() / '.globus'
-        print(f"The environment variable '{GEM_DQM_CERN_CERTIFICATE}' is not set. It fallbacks to '{str(cert_dir)}'")
-
-    if not cert_dir.exists():
-        raise FileNotFoundError(cert_dir)
-
-    certfile = cert_dir / 'usercert.pem'
-    if not certfile.exists():
-        raise FileNotFoundError(certfile)
-
-    keyfile = cert_dir / 'userkey.pem'
-    if not keyfile.exists():
-        raise FileNotFoundError(keyfile)
-
-    return CertChain(str(certfile), str(keyfile))
-
-
-class HTTPSAuthConnection(http.client.HTTPSConnection):
-    def __init__(self,
-                 host: str,
-                 context: Optional[ssl.SSLContext] = None,
-                 **kwargs
-    ) -> None:
-        context = context or ssl._create_default_https_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-
-        cert_chain = load_cert_chain()
-        context.load_cert_chain(certfile=cert_chain.certfile,
-                                keyfile=cert_chain.keyfile,
-                                password=None)
-
-        super().__init__(host, context=context, **kwargs)
-
-
-class HTTPSAuthHandler(urllib.request.AbstractHTTPHandler):
-    def default_open(self, req):
-        return self.do_open(http_class=HTTPSAuthConnection, # type: ignore
-                            req=req)
-
-###############################################################################
 # DQM
 ###############################################################################
 
@@ -164,11 +68,7 @@ class LinkFinderCallable(Protocol):
         ...
 
 def _find_file_url(url: str, pattern: re.Pattern) -> str:
-    response = urllib.request.build_opener(HTTPSAuthHandler()).open(url)
-
-    if response.status != HTTPStatus.OK:
-        raise RuntimeError(f'[{response.status=}] {url=:s}')
-
+    response = open_url(url)
     soup = BeautifulSoup(response, features="html.parser")
     for a_tag in soup.find_all('a'):
         href = a_tag.attrs['href']
@@ -221,11 +121,7 @@ def download_root_file(url: str,
         print(f"created directory '{output_dir}'")
     output_path = output_dir / filename
     assert output_path.suffix == '.root', output_path
-
-    response = urllib.request.build_opener(HTTPSAuthHandler()).open(url)
-    if response.status != HTTPStatus.OK:
-        raise RuntimeError(f'[{response.status=}] {url=:s}')
-
+    response = open_url(url)
     data = response.read()
     with open(output_path, 'wb') as root_file:
         root_file.write(data)

@@ -1,33 +1,12 @@
 #!/usr/bin/env python
-from dataclasses import dataclass
 import json
 from typing import Optional
 import argparse
 from pathlib import Path
-from omsapi import OMSAPI
-import getpass
-import signal
+from gemdqm.oms import load_oms_api
+from gemdqm.oms import MAX_PER_PAGE
 
-MAX_PER_PAGE = 100000
 ERA_RUN2022A_START_RUN = 352322
-PASSWORD_PROMPT_TIMEOUT = 10 # sec
-
-def timeout_handler(signum, frame):
-    raise TimeoutError('Timeout!')
-
-@dataclass
-class ClientAuth:
-    id: str
-    secret: str
-
-def get_client_autho_from_prompt():
-    client_id = getpass.getpass(prompt='OMS API Client ID: ')
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(PASSWORD_PROMPT_TIMEOUT)
-    client_secret = getpass.getpass(
-            prompt=f'OMS API Client Secret (timeout after {PASSWORD_PROMPT_TIMEOUT} sec): ')
-    signal.alarm(0)
-    return ClientAuth(client_id, client_secret)
 
 def run(start_run: int,
         end_run: Optional[int] = None,
@@ -37,11 +16,8 @@ def run(start_run: int,
         raise RuntimeError(f"start_run(={end_run}) > end_run(={end_run})")
     output_dir = output_dir or Path.cwd()
 
-    omsapi = OMSAPI(cert_verify=False)
-    client_auth = get_client_autho_from_prompt()
-    omsapi.auth_oidc(client_id=client_auth.id, client_secret=client_auth.secret)
-
-    query = omsapi.query("runs")
+    oms_api = load_oms_api()
+    query = oms_api.query("runs")
     filters = [
         {
             "attribute_name": "run_number",
@@ -59,7 +35,6 @@ def run(start_run: int,
     query.paginate(per_page=MAX_PER_PAGE)
     response = query.data()
     data = response.json()
-
 
     end_run = end_run or data['data'][-1]['id']
     output_path = output_dir / f'runs_{start_run}_{end_run}.json'

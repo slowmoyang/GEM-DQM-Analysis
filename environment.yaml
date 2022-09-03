@@ -16,3 +16,4 @@ dependencies:
     - pandas
     - pip:
         - git+ssh://git@gitlab.cern.ch:7999/cmsoms/oms-api-client.git
+        - https://github.com/slowmoyang/GEMDQMUtils
